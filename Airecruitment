@@ -1,0 +1,218 @@
+import React, { useEffect, useMemo, useState } from "react"; import { Card, CardContent } from "@/components/ui/card"; import { Button } from "@/components/ui/button"; import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"; import { Textarea } from "@/components/ui/textarea"; import { Input } from "@/components/ui/input"; import { Badge } from "@/components/ui/badge"; import { Progress } from "@/components/ui/progress"; import { Separator } from "@/components/ui/separator"; import { motion } from "framer-motion"; import { FileText, History, Stars } from "lucide-react";
+
+/**
+
+AI Recruitment Assistant – single-file React component
+
+Requirements:
+
+TailwindCSS (utility classes)
+
+
+shadcn/ui for the imported components
+
+
+lucide-react & framer-motion (optional but nice)
+
+
+Drop this file anywhere in your app and render <AIRecruitmentAssistant /> */
+
+
+// ------------------------------ // Tiny analysis helpers (no external AI) // ------------------------------ const STOP = new Set( "a,an,the,and,or,but,if,then,than,for,of,on,in,with,by,to,from,at,is,are,was,were,be,as,this,that,these,those,can,will,using,use,used,via,our,your,we,they,he,she,it,them,his,her,its,have,has,had,do,does,did,not".split(",") );
+
+const tokenize = (t = "") => t .toLowerCase() .replace(/[^a-z0-9+#.-\s]/g, " ") .split(/\s+/) .filter(Boolean);
+
+const tf = (tokens) => { const m = new Map(); tokens.forEach((x) => m.set(x, (m.get(x) || 0) + 1)); return m; };
+
+const cosine = (a, b) => { const terms = new Set([...a.keys(), ...b.keys()]); let dot = 0, aMag = 0, bMag = 0; for (const t of terms) { const av = a.get(t) || 0; const bv = b.get(t) || 0; dot += av * bv; aMag += av * av; bMag += bv * bv; } return aMag && bMag ? dot / (Math.sqrt(aMag) * Math.sqrt(bMag)) : 0; };
+
+const topKeywords = (text, n = 20) => { const tokens = tokenize(text).filter((w) => !STOP.has(w)); const counts = tf(tokens); return [...counts.entries()] .sort((a, b) => b[1] - a[1]) .slice(0, n) .map(([w]) => w); };
+
+const hitRatio = (text, kws) => { const set = new Set(tokenize(text)); const hits = kws.reduce((acc, k) => acc + (set.has(k) ? 1 : 0), 0); return kws.length ? hits / kws.length : 0; };
+
+const pct = (n) => Math.round(n * 100); const nowISO = () => new Date().toISOString();
+
+// ------------------------------ // Local storage for evaluation history // ------------------------------ const STORAGE_KEY = "ai-recruitment-assistant-history"; const loadHistory = () => { try { const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : []; } catch { return []; } }; const saveHistory = (list) => localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+
+// ------------------------------ // Component // ------------------------------ export default function AIRecruitmentAssistant() { const [candidateName, setCandidateName] = useState(""); const [jobTitle, setJobTitle] = useState(""); const [jobDescription, setJobDescription] = useState(""); const [resumeText, setResumeText] = useState(""); const [loading, setLoading] = useState(false); const [result, setResult] = useState(null); const [history, setHistory] = useState(loadHistory());
+
+useEffect(() => saveHistory(history), [history]);
+
+const jdKeywords = useMemo(() => topKeywords(jobDescription, 25), [jobDescription]);
+
+const onUpload = async (e, target) => { const f = e.target.files?.[0]; if (!f) return; const text = await f.text(); if (target === "jd") setJobDescription((prev) => (prev ? prev + "\n" : "") + text); if (target === "cv") setResumeText((prev) => (prev ? prev + "\n" : "") + text); };
+
+const evaluate = () => { setLoading(true); // Simulate processing setTimeout(() => { const jdTF = tf(tokenize(jobDescription)); const cvTF = tf(tokenize(resumeText)); const sim = cosine(jdTF, cvTF); const kw = hitRatio(resumeText, jdKeywords); const overall = Math.min(1, 0.6 * sim + 0.4 * kw);
+
+const strengths = jdKeywords.filter((k) => resumeText.toLowerCase().includes(k)).slice(0, 10);
+  const gaps = jdKeywords.filter((k) => !resumeText.toLowerCase().includes(k)).slice(0, 10);
+
+  const recommendation = overall >= 0.8
+    ? "Strong match – proceed to interview"
+    : overall >= 0.6
+    ? "Moderate match – schedule a screening"
+    : "Low match – keep on file";
+
+  const rec = {
+    id: crypto?.randomUUID?.() || Math.random().toString(36).slice(2),
+    when: nowISO(),
+    candidateName: candidateName || "(Unnamed)",
+    jobTitle: jobTitle || "(Untitled role)",
+    jobDescription,
+    resumeText,
+    jdKeywords,
+    strengths,
+    gaps,
+    scores: { similarity: sim, keyword: kw, overall },
+    recommendation,
+  };
+
+  setResult(rec);
+  setHistory((prev) => [rec, ...prev].slice(0, 25));
+  setLoading(false);
+}, 400);
+
+};
+
+const reset = () => { setCandidateName(""); setJobTitle(""); setJobDescription(""); setResumeText(""); setResult(null); };
+
+return ( <div className="min-h-screen w-full bg-gradient-to-b from-indigo-50 to-white p-4 md:p-8"> {/* Header */} <header className="max-w-5xl mx-auto mb-6 flex items-center gap-3"> <div className="p-3 rounded-2xl bg-indigo-100"><Stars className="h-6 w-6" /></div> <div> <h1 className="text-2xl md:text-4xl font-semibold tracking-tight">AI Recruitment Assistant</h1> <p className="text-sm md:text-base text-muted-foreground">Intelligent candidate screening powered by lightweight heuristics.</p> </div> </header>
+
+{/* Evaluation Setup */}
+  <Card className="max-w-5xl mx-auto shadow-sm rounded-2xl">
+    <CardContent className="p-4 md:p-6 space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Candidate Name (Optional)</label>
+          <Input value={candidateName} onChange={(e) => setCandidateName(e.target.value)} placeholder="Enter candidate's name" />
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Job Title (Optional)</label>
+          <Input value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder="Enter job position" />
+        </div>
+      </div>
+
+      <Tabs defaultValue="manual" className="w-full">
+        <TabsList className="grid grid-cols-2 w-full">
+          <TabsTrigger value="manual">Manual Input</TabsTrigger>
+          <TabsTrigger value="upload">File Upload</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="manual" className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Job Description</label>
+            <Textarea value={jobDescription} onChange={(e) => setJobDescription(e.target.value)} placeholder="Paste the complete job description here including requirements, responsibilities, and qualifications..." className="min-h-[160px]" />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Candidate Resume</label>
+            <Textarea value={resumeText} onChange={(e) => setResumeText(e.target.value)} placeholder="Paste the candidate's resume content here including experience, education, and skills..." className="min-h-[160px]" />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="upload" className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium flex items-center gap-2"><FileText className="h-4 w-4" />Upload Job Description (.txt)</label>
+            <Input type="file" accept=".txt,.md" onChange={(e) => onUpload(e, "jd")} />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium flex items-center gap-2"><FileText className="h-4 w-4" />Upload Candidate Resume (.txt)</label>
+            <Input type="file" accept=".txt,.md" onChange={(e) => onUpload(e, "cv")} />
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      <div className="flex flex-wrap gap-3 pt-2">
+        <Button onClick={evaluate} disabled={loading || !jobDescription || !resumeText} className="rounded-2xl px-5">
+          {loading ? "Evaluating..." : "Evaluate Candidate"}
+        </Button>
+        <Button variant="secondary" onClick={reset} className="rounded-2xl">Reset</Button>
+      </div>
+    </CardContent>
+  </Card>
+
+  {/* Result */}
+  {result && (
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="max-w-5xl mx-auto mt-6">
+      <Card className="rounded-2xl">
+        <CardContent className="p-4 md:p-6 space-y-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="text-xl font-semibold">Evaluation Result</h2>
+              <p className="text-sm text-muted-foreground">{result.candidateName} • {result.jobTitle}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge className="rounded-xl">Similarity {pct(result.scores.similarity)}%</Badge>
+              <Badge className="rounded-xl">Keywords {pct(result.scores.keyword)}%</Badge>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm">Overall Match</label>
+            <Progress value={pct(result.scores.overall)} className="h-3" />
+            <p className="text-sm">{pct(result.scores.overall)}% – {result.recommendation}</p>
+          </div>
+
+          <Separator />
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <h3 className="font-medium">Top JD Keywords</h3>
+              <div className="flex flex-wrap gap-2">
+                {result.jdKeywords.map((k) => (
+                  <Badge key={k} variant="secondary" className="rounded-xl">{k}</Badge>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <h3 className="font-medium">Strengths (found in resume)</h3>
+              <div className="flex flex-wrap gap-2 min-h-[32px]">
+                {result.strengths.length ? result.strengths.map((k) => (
+                  <Badge key={k} className="rounded-xl">{k}</Badge>
+                )) : <p className="text-sm text-muted-foreground">None detected yet</p>}
+              </div>
+              <h3 className="font-medium mt-4">Gaps (missing in resume)</h3>
+              <div className="flex flex-wrap gap-2 min-h-[32px]">
+                {result.gaps.length ? result.gaps.map((k) => (
+                  <Badge key={k} variant="outline" className="rounded-xl">{k}</Badge>
+                )) : <p className="text-sm text-muted-foreground">No major gaps</p>}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
+  )}
+
+  {/* History */}
+  <div className="max-w-5xl mx-auto mt-6">
+    <Card className="rounded-2xl">
+      <CardContent className="p-4 md:p-6">
+        <div className="flex items-center gap-2 mb-3"><History className="h-4 w-4" /><h3 className="font-medium">Evaluation History</h3></div>
+        {history.length === 0 ? (
+          <div className="text-center py-10 text-muted-foreground">No evaluations yet<br/>Complete an evaluation to see it appear here</div>
+        ) : (
+          <ul className="space-y-3">
+            {history.map((h) => (
+              <li key={h.id} className="p-3 rounded-xl border flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-medium">{h.candidateName} → {h.jobTitle}</div>
+                  <div className="text-xs text-muted-foreground">{new Date(h.when).toLocaleString()}</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge className="rounded-xl">{pct(h.scores.overall)}%</Badge>
+                  <Button variant="secondary" size="sm" onClick={() => setResult(h)}>View</Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  </div>
+
+  <footer className="max-w-5xl mx-auto text-center text-xs text-muted-foreground mt-6">
+    Built with ❤ – no external API required. Replace the scoring with your own model/endpoint if desired.
+  </footer>
+</div>
+
+); }
